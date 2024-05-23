@@ -5,7 +5,7 @@ import os
 import argparse
 import tempfile
 from time import time
-
+from cv2 import imwrite
 from numpy import mean
 from torch.utils.data import Dataset, DataLoader
 import torch
@@ -29,12 +29,11 @@ from synthetic_dataset.synthetic_burst_train_set import SyntheticBurst
 from torchvision.transforms import GaussianBlur
 import torch.multiprocessing as mp
 from torch.multiprocessing import Process
-import cv2
 from seed_everything import seed_everything
 from loss import Pyramid, PSNRM
 from collections import OrderedDict
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,4,5,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2"
 
 
 def init_distributed_mode(args):
@@ -50,7 +49,7 @@ def init_distributed_mode(args):
     args.distributed = True
 
     torch.cuda.set_device(args.gpu)
-    args.dist_backend = 'nccl'  # 通信后端，nvidia GPU推荐使用NCCL
+    args.dist_backend = 'nccl'
     print('| distributed init (rank {}): {}'.format(
         args.rank, args.dist_url), flush=True)
     torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
@@ -106,9 +105,9 @@ class DeepSR(nn.Module):
                                   bias=False,
                                   LayerNorm_type='WithBias')
         # EncoderNet: feature extraction backbone based on channel self-attention transformer block
-        self.PCAF = PCAFNet(num_im, PCAF_num_features)
+        self.PBFF = PCAFNet(num_im, PCAF_num_features)
         # PCAFNet: pseudo camera array feature
-        self.AGF = AGFNet(PCAF_num_features, 4)
+        self.APGU = AGFNet(PCAF_num_features, 4)
         # AGFNet: high-resolution adaptive group fusion
         self.decoder = DecoderNet(inp_channels=PCAF_num_features,
                                   out_channels=1,
@@ -142,7 +141,7 @@ class DeepSR(nn.Module):
                           local_rank=self.local_rank)  # b * num_im * num_features, sr_ration*h, sr_ratio*w
         # featureAdd: Sub-pixel motion compensation without parameters
         dadd = dadd.view(b, num_im, self.Encoder_num_features, self.sr_ratio * h, self.sr_ratio * w)
-        SR = self.AGF(self.PCAF(dadd)).squeeze(1)  # b, 1, PCAF_num_features, sr_ratio * h, sr_ratio * w
+        SR = self.APGU(self.PBFF(dadd)).squeeze(1)  # b, 1, PCAF_num_features, sr_ratio * h, sr_ratio * w
         SR = self.decoder(SR)  # b, 1, sr_ration*h, sr_ratio*w
 
         return SR, flow, warploss, warped
@@ -225,7 +224,7 @@ def train(local_rank, world_size, args):
     torch.distributed.barrier()
     deepSuperresolve.load_state_dict(torch.load(checkpoint_path, map_location=torch.device('cuda', local_rank)))
 
-    checkpoint_path_ME = "/home/WXS/CYT/TrainHistory_Align/self-supervised_multi-image_DeepAI_time_09-24-15-42-25/checkpoint_49.pth.tar"
+    checkpoint_path_ME = "/MEAlign.tar"
     checkpoint = torch.load(checkpoint_path_ME, map_location=torch.device('cuda', local_rank))
     state_dict = checkpoint['state_dict deepMEAlign']
     new_state_dict = OrderedDict()
@@ -234,7 +233,7 @@ def train(local_rank, world_size, args):
         new_state_dict[name] = v
     deepSuperresolve.MEAlign.load_state_dict(new_state_dict)
     base_params = list(map(id, deepSuperresolve.MEAlign.parameters()))
-    logits_params = filter(lambda p: id(p) not in base_params, deepSuperresolve.parameters())  # 不包含返回真，过滤假
+    logits_params = filter(lambda p: id(p) not in base_params, deepSuperresolve.parameters())
     DeepSR_params = [
         {"params": logits_params, "lr": lr_DeepSR},
         {"params": deepSuperresolve.MEAlign.parameters(), "lr": lr_DeepAlign}
@@ -250,7 +249,7 @@ def train(local_rank, world_size, args):
     deepSuperresolve = torch.nn.parallel.DistributedDataParallel(deepSuperresolve, device_ids=[local_rank],
                                                                  broadcast_buffers=False)
 
-    Dataset_path = '/home/WXS/CYT/'
+    Dataset_path = '/ZurichRAW2RGB/'
     train_zurich_raw2rgb = ZurichRAW2RGB(root=Dataset_path, split='train')
     train_data_set = SyntheticBurst(train_zurich_raw2rgb, burst_size=num_im, crop_sz=train_patchsize, gray_max=255.0)
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_data_set)
@@ -259,7 +258,7 @@ def train(local_rank, world_size, args):
                                                batch_size=train_bs,
                                                sampler=train_sampler,
                                                pin_memory=True,
-                                               num_workers=1)
+                                               num_workers=0)
     val_zurich_raw2rgb = ZurichRAW2RGB(root=Dataset_path, split='val')
     val_data_set = SyntheticBurst(val_zurich_raw2rgb, burst_size=num_im, crop_sz=val_patchsize, gray_max=255.0)
     val_sampler = torch.utils.data.distributed.DistributedSampler(val_data_set)
@@ -268,11 +267,14 @@ def train(local_rank, world_size, args):
                                              batch_size=val_bs,
                                              sampler=val_sampler,
                                              pin_memory=True,
-                                             num_workers=1)
+                                             num_workers=0)
 
     checkpoint_dir = '/home/WXS/CYT/TrainHistory/{}'.format(folder_name)
     result_dir_SR = '/home/WXS/CYT/result_dir_SR/{}'.format(folder_name)
     result_dir_LR = '/home/WXS/CYT/result_dir_LR/{}'.format(folder_name)
+    safe_mkdir(checkpoint_dir)
+    safe_mkdir(result_dir_SR)
+    safe_mkdir(result_dir_LR)
     psnr_fn = PSNRM(boundary_ignore=24, max_value=255.0)
     ##################
     starttime = time()
@@ -332,7 +334,7 @@ def train(local_rank, world_size, args):
 
                 c = 8
                 SR, flow, warploss, warped = deepSuperresolve(samplesLR.clone(), False, c, 'Detail') # Reference LR image remains unchanged during testing
-                tvloss = TVLoss(flow[..., c:-c, c:-c])  # 对齐模块中TV损失
+                tvloss = TVLoss(flow[..., c:-c, c:-c])  # TV loss in alignment module
 
                 SR_ds = BackWarping(
                     SR.unsqueeze(1).repeat(1, num_im, 1, 1, 1).view(-1, 1, sr_ratio * h, sr_ratio * w), local_rank,
@@ -354,7 +356,7 @@ def train(local_rank, world_size, args):
             if local_rank == 0:
                 SR = SR[0, 0, ...]
                 SR = SR.detach().cpu().numpy().squeeze()
-                cv2.imwrite(os.path.join(result_dir_SR, "SR_{:03d}.png".format(epoch)), SR)
+                imwrite(os.path.join(result_dir_SR, "SR_{:03d}.png".format(epoch)), SR)
                 m, _, h, w = samplesLR.shape
                 b = int(m / num_im)
                 samplesLR = samplesLR.view(b, num_im, h, w)
@@ -362,10 +364,10 @@ def train(local_rank, world_size, args):
                 for n in range(num_im):
                     LR = samplesLR[0, n, ...]
                     LR = LR.detach().cpu().numpy().squeeze()
-                    cv2.imwrite(os.path.join(result_dir_LR, "LR_{:03d}_{:02d}.png".format(epoch, n)), LR)
+                    imwrite(os.path.join(result_dir_LR, "LR_{:03d}_{:02d}.png".format(epoch, n)), LR)
                     warp = warped[0, n, ...]
                     warp = warp.detach().cpu().numpy().squeeze()
-                    cv2.imwrite(os.path.join(result_dir_LR, "Warped_{:03d}_{:02d}.png".format(epoch, n)), warp)
+                    imwrite(os.path.join(result_dir_LR, "Warped_{:03d}_{:02d}.png".format(epoch, n)), warp)
 
         if local_rank == 0:
             print('Val')
@@ -382,7 +384,7 @@ def train(local_rank, world_size, args):
                      'state_dict DeepSR': deepSuperresolve.state_dict(),
                      'optimizerDeepSR': optimizer_DeepSR.state_dict(),
                      'schedulerDeepSR': schedulerDeepSR.state_dict()}
-            torch.save(state, os.path.join(checkpoint_dir, 'checkpoint_{}.pth.tar'.format(epoch)))
+            torch.save(state, os.path.join(checkpoint_dir, 'checkpoint_{}.tar'.format(epoch)))
 
     if local_rank == 0:
         print('Execution time = {:.0f}s'.format(time() - starttime))
@@ -409,14 +411,14 @@ if __name__ == '__main__':
     parser.add_argument("-la", "--lr_DeepAlign", help="Learning rate of DeepAlign", type=float, default=1e-5)
     parser.add_argument("-ne", "--num_epochs", help="Num_epochs", type=int, default=100)
     parser.add_argument("-ednf", "--Ed_num_features", help="Num of features for encoder", type=int, default=64)
-    parser.add_argument("-PCAFnf", "--PBFF_num_features", help="Num of features for PBFF", type=int, default=64)
+    parser.add_argument("-PCAFnf", "--PCAF_num_features", help="Num of features for PBFF", type=int, default=64)
     parser.add_argument("-nb", "--num_blocks", help="Number of residual blocks in encoder", type=int, default=4)
     parser.add_argument("-srr", "--sr_ratio", help="Super-resolution factor", type=int, default=3)
     parser.add_argument('-num', '--num_im', nargs='+', help="Number of image for camera array", default=9)
     parser.add_argument('-sbn', '--Sync_BN', help="Synchronization of BN across multi-gpus", default=True)
     parser.add_argument('-tps', '--train_patchsize', help="the size of crop for training", default=168)
     parser.add_argument('-vps', '--val_patchsize', help="the size of crop for val", default=168)
-    parser.add_argument('-wz', '--world_size', default=6, type=int, help='number of distributed processes')
+    parser.add_argument('-wz', '--world_size', default=3, type=int, help='number of distributed processes')
     parser.add_argument("-ww", "--warp_weight", help="Weight for the warping loss", type=float, default=3.0)
     parser.add_argument("-tvw", "--TVflow_weight", help="Weight for the TV flow loss", type=float, default=0.01)
     parser.add_argument('-wd', '--weight-decay', help='weight decay (default: 1e-6)', type=float, default=1e-6)
