@@ -30,3 +30,5 @@ See requirements.txt for the installation of dependencies required
 ```
 pip install -r requirements.txt
 ```
+# Test datasets
+Download [Synthetic test datasets](https://pan.baidu.com/s/1HkH98002GiUQAUwU_CdpwQ). code: 1234
