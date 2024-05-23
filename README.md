@@ -12,15 +12,15 @@ python train_m2i_real.py
 python train_gm2m_real.py
 ```
 # Pre-trained model of CASR-DSAT
-Download [MEAlign](https://pan.baidu.com/s/19lXZYWvs95eK8v2JLgEbXw). code: 1234
+Download [Pre-trained model of MEAlign](https://pan.baidu.com/s/19lXZYWvs95eK8v2JLgEbXw). code: 1234
 
-Download [M2I learning of CASR-DSAT](https://pan.baidu.com/s/19lXZYWvs95eK8v2JLgEbXw). code: 1234
+Download [Pre-trained model of CASR-DSAT for M2I learning](https://pan.baidu.com/s/19lXZYWvs95eK8v2JLgEbXw). code: 1234
 
-Download [GM2M learning of CASR-DSAT](https://pan.baidu.com/s/19lXZYWvs95eK8v2JLgEbXw). code: 1234
+Download [Pre-trained model of CASR-DSAT for GM2M learning](https://pan.baidu.com/s/19lXZYWvs95eK8v2JLgEbXw). code: 1234
 # Pre-trained models of supervised comparison methods
-Download [supervised comparison methods](https://pan.baidu.com/s/11b5XnLtvQcWmjZ70gpfZCA). code: 1234
+Download [Pre-trained models of supervised comparison methods](https://pan.baidu.com/s/11b5XnLtvQcWmjZ70gpfZCA). code: 1234
 # Pre-trained models of self-supervised comparison methods
-Download [self-supervised comparison methods](https://pan.baidu.com/s/1X84_uM-S8RH6ltylQ3biAw). code: 1234
+Download [Pre-trained models of self-supervised comparison methods](https://pan.baidu.com/s/1X84_uM-S8RH6ltylQ3biAw). code: 1234
 # Installation
 python=3.7
 ```
