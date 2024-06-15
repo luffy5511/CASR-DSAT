@@ -11,6 +11,10 @@ Download [CASR real dataset](https://pan.baidu.com/s/175m1VXEwD5yo4PpngOktBw). c
 python train_m2i_real.py
 python train_gm2m_real.py
 ```
+# Test
+```
+python test.py --model_path model_path --folder_lr folder_lr --folder_sr folder_sr
+```
 # Pre-trained model of CASR-DSAT
 Download [Pre-trained model of MEAlign](https://pan.baidu.com/s/19lXZYWvs95eK8v2JLgEbXw). code: 1234
 
