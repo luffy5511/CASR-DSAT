@@ -13,7 +13,7 @@ python train_gm2m_real.py
 ```
 # Test
 ```
-python test.py --model_path model_path --folder_lr folder_lr --folder_sr folder_sr
+python test.py --model_path model_path --folder_lr folder_lr --folder_sr folder_sr --test_size 168
 ```
 # Pre-trained model of CASR-DSAT
 Download [Pre-trained model of MEAlign](https://pan.baidu.com/s/19lXZYWvs95eK8v2JLgEbXw). code: 1234
