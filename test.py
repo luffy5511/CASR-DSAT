@@ -160,9 +160,10 @@ def reduce_mean(tensor, nprocs):
 def test(args):
     seed_everything(0)
     # Load the parameters
-    val_bs, num_im, sr_ratio, val_patchsize = \
-        args.val_bs, args.num_im, args.sr_ratio, args.val_patchsize
+    val_bs, num_im, sr_ratio, test_size = \
+        args.val_bs, args.num_im, args.sr_ratio, args.test_size
     Ed_num_features, PCAF_num_features, num_blocks = args.Ed_num_features, args.PCAF_num_features, args.num_blocks
+    model_path, folder_lr, folder_sr = args.model_path, args.folder_lr, args.folder_sr
 
     sr_ratio = args.sr_ratio
     folder_name = 'self-supervised_multi-image_deepSR_time_{}'.format(
@@ -173,9 +174,9 @@ def test(args):
         raise EnvironmentError("not find GPU device for testing.")
     deepSuperresolve = DeepSR(num_im=num_im,
                               Encoder_num_features=Ed_num_features, PCAF_num_features=PCAF_num_features,
-                              sr_ratio=sr_ratio, img_size=(val_patchsize*sr_ratio, val_patchsize*sr_ratio)).cuda()
+                              sr_ratio=sr_ratio, img_size=(test_size*sr_ratio, test_size*sr_ratio)).cuda()
     # Test model
-    checkpoint_path ="/Pre-CASR-DSAT-GM2M.pth.tar"
+    checkpoint_path = model_path
     checkpoint = torch.load(checkpoint_path)
     state_dict = checkpoint['state_dict DeepSR']
     new_state_dict = OrderedDict()
@@ -184,12 +185,12 @@ def test(args):
         new_state_dict[name] = v
     deepSuperresolve.load_state_dict(new_state_dict)
     # Test dataset
-    Dataset_path = "/test_synthetic_burst/DIV2K_valid_HR/"
-    val_data_set = BurstSRDataset_syn(root=Dataset_path, split='test', burst_size=9, crop_sz=(112, 168), center_crop=True,
+    Dataset_path = folder_lr
+    val_data_set = BurstSRDataset_syn(root=Dataset_path, split='test', burst_size=9, crop_sz=(test_size, test_size), center_crop=True,
                                    random_flip=False)
     val_loader = torch.utils.data.DataLoader(val_data_set, batch_size=val_bs,
                                              num_workers=0, shuffle=False)
-    result_dir_SR ="/test_synthetic_result/"
+    result_dir_SR = folder_sr
     ##################
     starttime = time()
     ##################
@@ -222,6 +223,11 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument("-mp", '--model_path', type=str, default="/Pre-CASR-DSAT-GM2M.pth.tar")
+    parser.add_argument("-fl", '--folder_lr', type=str, default="/test_synthetic_burst/DIV2K_valid_HR/",
+                        help='input LR test image folder')
+    parser.add_argument("-fs", '--folder_sr', type=str, default="/test_synthetic_result/",
+                        help='input SR test result folder')
     parser.add_argument("-on", "--option_name", help="Option id", default='J_selfSR')
     parser.add_argument("-bsv", "--val_bs", help="Batch size of val loader", type=int, default=1)  # 5
     parser.add_argument("-ednf", "--Ed_num_features", help="Num of features for encoder", type=int, default=64)
@@ -229,7 +235,7 @@ if __name__ == '__main__':
     parser.add_argument("-nb", "--num_blocks", help="Number of residual blocks in encoder", type=int, default=4)
     parser.add_argument("-srr", "--sr_ratio", help="Super-resolution factor", type=int, default=3)
     parser.add_argument('-num', '--num_im', nargs='+', help="Number of image for camera array", default=9)
-    parser.add_argument('-vps', '--val_patchsize', help="the size of crop for val", default=168)
+    parser.add_argument('-ts', '--test_size', help="the size of crop for val", type=int, default=168)
 
     args = parser.parse_args()
 
